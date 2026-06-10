@@ -209,6 +209,11 @@ textarea:focus{border-color:var(--sky-mid)}
   </div>
 </div>
 
+<!-- FULLIMG OVERLAY -->
+<div id="fullimg-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.9);z-index:200;align-items:center;justify-content:center;cursor:zoom-out" onclick="this.style.display='none'">
+  <img id="fullimg-el" style="max-width:100%;max-height:100%;object-fit:contain;border-radius:4px">
+</div>
+
 <!-- MODAL -->
 <div class="modal-overlay" id="modal" style="display:none" onclick="closeModal(event)">
   <div class="modal">
@@ -321,12 +326,17 @@ function openDiary(idx){
   const d=S.diaries[idx];
   document.getElementById('modal-title').textContent='📅 '+d.date;
   const imgEl=document.getElementById('modal-img');
-  if(d.img){imgEl.src=d.img;imgEl.style.display='block';}
-  else{imgEl.style.display='none';}
+  if(d.img){imgEl.src=d.img;imgEl.style.display='block';imgEl.style.cursor='zoom-in';imgEl.onclick=()=>openFullImg(d.img);}
+  else{imgEl.style.display='none';imgEl.onclick=null;}
   let body=d.text+'\n\n';
   if(d.transactions&&d.transactions.length){body+='【記録した支出・収入】\n';d.transactions.forEach(t=>{body+=`${t.type==='expense'?'－':'＋'} ${fmt(t.amount)} ${t.category} (${t.method})\n`;});}
   document.getElementById('modal-body').textContent=body;
   document.getElementById('modal').style.display='flex';
+}
+function openFullImg(src){
+  const ov=document.getElementById('fullimg-overlay');
+  document.getElementById('fullimg-el').src=src;
+  ov.style.display='flex';
 }
 function closeModal(e){if(e.target.id==='modal')document.getElementById('modal').style.display='none';}
 function saveBalance(type,inputId,displayId){
@@ -495,17 +505,15 @@ function askNext(){
   const item=S.pending[S.idx];clearI();
   addQuote(item.sourceText);
   if(item.type==='expense'){
-    addChat(item.description+'ですね。いくらでしたか？（参考：'+fmt(item.mockAmt)+'くらいかも）','ai');
-    showAmtInput(item.mockAmt,amt=>{item.amount=amt;addChat(fmt(amt),'user');askCategory(item);});
+    addChat(item.description+'ですね。いくらでしたか？カテゴリも選んでください。','ai');
+    showAmtInput(item.mockAmt,amt=>{item.amount=amt;askPay(item);});
   } else {
     addChat(item.description+'ですね！何の収入ですか？','ai');
     showChoices(INCOMES,c=>{item.incomeType=c;addChat(c,'user');askIncomeAmt(item);});
   }
 }
 function askCategory(item){
-  clearI();
-  addChat('カテゴリを選んでください（AIの提案：'+item.category+'）','ai');
-  showChoices(CAT_KEYS,c=>{item.category=c;addChat(c,'user');askPay(item);},item.category);
+  // 金額入力と同時にカテゴリ選択するようになったため未使用
 }
 function askIncomeAmt(item){
   clearI();addChat('いくらもらいましたか？','ai');
@@ -517,13 +525,26 @@ function askPay(item){
   showChoices(PAYS,c=>{item.method=c;addChat(c,'user');S.idx++;setTimeout(askNext,300);});
 }
 function showAmtInput(def,cb){
-  document.getElementById('interact-area').innerHTML='<div class="amt-row"><input class="amt-in" type="number" id="amt-in" placeholder="金額..." value="'+def+'"><button class="amt-send" onclick="submitAmt()">決定</button></div>';
+  document.getElementById('interact-area').innerHTML='<div class="amt-row"><input class="amt-in" type="number" id="amt-in" placeholder="金額..." value="'+def+'" oninput="onAmtChange()"></div><div id="amt-cat-hint" style="font-size:11px;color:var(--muted);margin:4px 0 4px">金額を入力したらカテゴリを選んでください</div><div id="amt-cat-row" class="choice-row" style="margin-top:2px"></div>';
   window._amtCb=cb;
+  renderAmtCatChoices();
 }
-function submitAmt(){
+function renderAmtCatChoices(){
+  const suggested=S.pending[S.idx]?S.pending[S.idx].category:'その他';
+  document.getElementById('amt-cat-row').innerHTML=CAT_KEYS.map(o=>`<button class="choice-btn${o===suggested?' selected':''}" onclick="submitAmtWithCat('${o}')">${CATS[o]||''}${o}</button>`).join('');
+}
+function onAmtChange(){
+  // 金額変わっても選択肢はそのまま（何もしない）
+}
+function submitAmtWithCat(cat){
   const v=parseInt(document.getElementById('amt-in').value)||0;
   if(v<=0){alert('金額を入力してください');return;}
-  clearI();window._amtCb(v);
+  // カテゴリを確定してチャットに表示
+  const item=S.pending[S.idx];
+  item.category=cat;
+  addChat(fmt(v)+'・'+cat,'user');
+  clearI();
+  window._amtCb(v);
 }
 function showChoices(opts,cb,suggested){
   document.getElementById('interact-area').innerHTML='<div class="choice-row">'+opts.map(o=>`<button class="choice-btn${o===suggested?' selected':''}" onclick="pickChoice('${o}')">${CATS[o]||''}${o}</button>`).join('')+'</div>';
